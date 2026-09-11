@@ -86,7 +86,6 @@ autoclicker/
 ```cpp
 class Clicker {
 public:
-  void leftButton(bool down);
   void rightButton(bool down);
   void scroll(int detents);
   void update(uint32_t now_ms);
@@ -96,14 +95,18 @@ public:
 };
 ```
 
+`Clicker` has no `leftButton()` method — left-click passthrough is fully handled by
+`firmware/`, which mirrors the physical left button's raw down/up state 1:1 into the
+BLE HID report every loop tick (press sends press, held stays held, release sends
+release). It behaves exactly like a normal wired mouse button and never touches
+`Clicker`'s state, so `Clicker` doesn't need to know it exists.
+
 Non-blocking: `update()` is called every `loop()` iteration (thousands of times/sec)
 and only acts once enough time has actually passed — there is no `delay()` anywhere in
 the system. State held internally: current interval, last-click timestamp, whether the
 right button is held.
 
 Logic:
-- `leftButton()` only affects passthrough (handled by `firmware/`, not `Clicker`'s
-  click-stream state).
 - `rightButton(down)` just records held/not-held; no timer starts here.
 - `scroll(detents)`: `intervalMs -= detents * 10`, clamped to [20, 150].
 - `update(now_ms)`: if held and `now_ms - lastClickTime >= intervalMs` (or this is the
@@ -111,8 +114,10 @@ Logic:
 
 Edge cases the test suite must cover: immediate click on press; no click and no leftover
 state after an early release; a speed change mid-stream takes effect on the *next*
-click without corrupting timing; clamping at both ends of the range; a manual left
-click during an active stream doesn't disturb it.
+click without corrupting timing; clamping at both ends of the range. (A manual left
+click during an active right-hold isn't a `Clicker` test case — it's satisfied by
+`firmware/` mirroring the left button independently, verified in the end-to-end
+manual checklist instead.)
 
 ### `firmware/` (Claude's)
 
