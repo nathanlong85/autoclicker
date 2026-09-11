@@ -62,9 +62,15 @@ not childish.
 
 ### Scope
 
-- **v1:** clicking only. No cursor movement (out of scope entirely).
+- **v1:** clicking, plus an RGB LED speed/connection indicator. No cursor movement
+  (out of scope entirely).
+- **LED (v1):** common 4-leg RGB LED, stand-in for an OLED until Nate/Colin get one.
+  Not paired → blue breathing pulse. Paired + idle → off. Paired + autoclicking →
+  green (slow) → yellow → red (fast) gradient by current interval. Pure color logic in
+  `firmware/LedColorPicker` (tested); `firmware/SpeedLed` wraps 3 `analogWrite()` calls
+  around it (untested glue). Pins/polarity decided during step 0/wiring.
 - **v2 candidates:** flash persistence of speed, deep sleep / low power, 0.42" I2C OLED
-  (72×40, SSD1306, U8g2 library) showing the speed value, LED feedback at min/max.
+  (72×40, SSD1306, U8g2 library) showing the exact speed value.
 
 ### Step 0 (before any core logic)
 

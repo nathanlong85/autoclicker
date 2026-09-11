@@ -27,13 +27,14 @@ and the hardware-facing firmware. Full hardware/firmware background is in
 
 ## Scope
 
-**v1:** clicking behavior only, no persistence, no low-power mode, no display.
+**v1:** clicking behavior, plus an RGB LED speed/connection indicator (see below,
+added 2026-09-10). No persistence, no low-power mode, no OLED display yet.
 
 **Deferred to v2+:** flash persistence of click speed across power cycles, deep
-sleep/low-power mode, a 0.42" I2C OLED (72×40, SSD1306, driven via the U8g2 library —
-Adafruit_SSD1306 doesn't handle this panel's RAM-window offset cleanly) showing the
-current interval, LED feedback at min/max speed. None of these affect the v1
-architecture; they're additive.
+sleep/low-power mode, and a 0.42" I2C OLED (72×40, SSD1306, driven via the U8g2
+library — Adafruit_SSD1306 doesn't handle this panel's RAM-window offset cleanly)
+showing the exact interval once Nate/Colin get one — the RGB LED is the stand-in
+until then. None of these affect the v1 architecture; they're additive.
 
 Mouse cursor movement is out of scope entirely — this is a clicker, not a mouse
 replacement. The HID descriptor only needs to declare buttons.
@@ -57,6 +58,18 @@ replacement. The HID descriptor only needs to declare buttons.
 - Manual left clicks work normally on top of an active autoclick stream; they don't
   interfere with the click timer.
 
+**RGB LED indicator (v1, added 2026-09-10):** a common-4-leg RGB LED shows connection
+and speed status, standing in until an OLED is added in v2:
+
+| State | Color |
+|---|---|
+| Not paired (advertising) | Blue, slow breathing pulse |
+| Paired, idle (right button not held) | Off |
+| Paired, autoclicking | Gradient by current speed: green (slowest, 150 ms) → yellow (mid) → red (fastest, 20 ms) |
+
+Exact GPIO pins and common-anode-vs-cathode polarity are decided during Step 0/wiring
+once the LED is in hand — not an architectural detail.
+
 ## Architecture
 
 Three units, one small shared contract:
@@ -72,6 +85,8 @@ autoclicker/
     QuadratureDecoder.h/.cpp       — pure quadrature decode logic (Claude's)
     HidButtonState.h/.cpp          — composes "held" + "pulse" into HID report state
     Mouse.h/.cpp                   — thin wrapper over Adafruit Bluefruit HID
+    LedColorPicker.h/.cpp          — pure: (connected, clicking, intervalMs) -> RGB
+    SpeedLed.h/.cpp                — thin: 3x analogWrite() around LedColorPicker
     autoclicker.ino                — setup()/loop(), wires everything together
   test/
     doctest.h                      — vendored single-header test framework
@@ -79,6 +94,7 @@ autoclicker/
     test_debouncer.cpp             — Claude's tests for firmware/'s pure pieces
     test_quadrature_decoder.cpp
     test_hid_button_state.cpp
+    test_led_color_picker.cpp
   Makefile                         — `make test` builds + runs test/ natively (macOS,
                                       no Arduino toolchain)
   CLAUDE.md
@@ -135,20 +151,27 @@ manual checklist instead.)
   "pulses" into the correct sequence of HID press/release reports, so an autoclick
   pulse firing while the player is genuinely holding left doesn't emit a spurious
   release. `Mouse` wraps the actual Bluefruit `sendReport()` call around it.
+- **`LedColorPicker`** — pure: `RGB colorFor(bool connected, bool clicking, uint16_t
+  intervalMs)`. Not paired → blue (breathing handled by `SpeedLed`'s timing, not this
+  function — it just returns "blue" as the target color to breathe with); paired +
+  idle → off; paired + clicking → green→yellow→red gradient interpolated from
+  `intervalMs` across [150, 20]. `SpeedLed` wraps three `analogWrite()` calls (PWM,
+  one per RGB leg) around it — that's the only untested part.
 - **`autoclicker.ino`** — owns `setup()`/`loop()`, reads `Button`/`Wheel`, drives
-  `Clicker`, drives `Mouse`. No behavioral logic of its own.
+  `Clicker`, drives `Mouse` and `SpeedLed`. No behavioral logic of its own.
 
 Bluefruit's `BLEHidAdafruit` handles BLE mouse advertising and the HID descriptor; no
-hand-rolled HID report format is needed.
+hand-rolled HID report format is needed. Connection state for `SpeedLed` comes from
+`Bluefruit.connected()`.
 
 ## Testing
 
 | Layer | Tests | Author |
 |---|---|---|
 | `core::Clicker` | Unit, `test/test_clicker.cpp`, host-run via `make test` | Colin |
-| `firmware::Debouncer`, `QuadratureDecoder`, `HidButtonState` | Unit, host-run via `make test` | Claude |
-| `Button`, `Wheel`, `Mouse` (one-line GPIO/BLE glue) | Not unit tested — covered by step 0 and final-assembly manual checks | — |
-| End-to-end (real board, real inputs, real Bluetooth) | Manual checklist: pairs on Mac/iPhone/Android; left/right/wheel behavior matches spec; fits in shell; charges over USB-C | Nate + Colin |
+| `firmware::Debouncer`, `QuadratureDecoder`, `HidButtonState`, `LedColorPicker` | Unit, host-run via `make test` | Claude |
+| `Button`, `Wheel`, `Mouse`, `SpeedLed` (one-line GPIO/BLE/PWM glue) | Not unit tested — covered by step 0 and final-assembly manual checks | — |
+| End-to-end (real board, real inputs, real Bluetooth) | Manual checklist: pairs on Mac/iPhone/Android; left/right/wheel behavior matches spec; LED shows the right color/state for each of the 3 connection/clicking states; fits in shell; charges over USB-C | Nate + Colin |
 
 `make test` compiles `core/` and `firmware/`'s pure classes plus `test/` with the host
 `g++`/`clang++` — no Arduino involvement, runs in well under a second. Firmware is
