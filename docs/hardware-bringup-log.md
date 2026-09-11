@@ -39,3 +39,14 @@
 - Bluefruit library: present, bundled with the core install at
   `~/Library/Arduino15/packages/adafruit/hardware/nrf52/1.7.0/libraries/Bluefruit52Lib`
   (not a separate Library Manager install).
+
+## Task 3: Blink — 2026-09-11
+
+- Used `arduino-cli compile --fqbn adafruit:nrf52:feather52840 --upload`
+  instead of the Arduino IDE GUI (consistent with using `arduino-cli` for
+  Task 2). Sketch written ad hoc (standard `LED_BUILTIN` blink) rather than
+  copied from IDE examples menu, since we're not using the IDE.
+- Upload succeeded: yes — "Device programmed." Sketch uses 21244 bytes (2%)
+  of program storage, 3096 bytes (1%) of dynamic memory.
+- LED blinking observed: yes (confirmed by Colin), steady ~1-second on/off.
+- Any errors encountered and how resolved: none.
