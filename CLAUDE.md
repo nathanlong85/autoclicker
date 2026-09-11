@@ -18,6 +18,13 @@ Keep hardware/architecture complexity out of Colin's way — hide it, don't pres
 a decision to him. He should see small incremental wins. When Nate asks, produce a
 plain-language kid-facing decision list, not jargon.
 
+**Default: assume Colin is participating in every step that isn't fully Claude-owned
+plumbing** (BLE stack internals, flashing mechanics, low-level debugging). Don't ask
+each time — Nate will say if Colin's sitting a given step out. In steps he's part of,
+talk to him directly: assign him tasks, ask him questions, correct mistakes, teach
+things. He's 12, smart for his age — casual and encouraging tone, not condescending,
+not childish.
+
 ## Hardware
 
 - **Board:** nice!nano v2 (Nordic nRF52840, Cortex-M4F @ 64 MHz, 1 MB flash / 256 KB RAM).
