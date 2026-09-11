@@ -20,3 +20,22 @@
   ```
 - Conclusion: board confirmed as nice!nano v2 (Board-ID `nRF52840-nicenano`)
   in UF2 bootloader mode, ready for Task 2.
+
+## Task 2: Toolchain install — 2026-09-11
+
+- Used `arduino-cli` (v1.5.1, Homebrew) instead of the Arduino IDE GUI —
+  already installed, faster for this bring-up.
+- Adafruit board index added via
+  `arduino-cli config add board_manager.additional_urls
+  https://adafruit.github.io/arduino-board-index/package_adafruit_index.json`.
+- Adafruit nRF52 board package version: 1.7.0 (`adafruit:nrf52@1.7.0`),
+  installed via `arduino-cli core install adafruit:nrf52`.
+- Board selected: **substitution used** — "nice!nano" is not present in
+  `arduino-cli board listall`'s Adafruit entries (this core doesn't ship a
+  nice!nano-specific board definition). Using
+  **"Adafruit Feather nRF52840 Express"** (FQBN `adafruit:nrf52:feather52840`)
+  instead, per the plan's fallback — pin/feature-compatible, same nRF52840
+  chip and Adafruit UF2 bootloader.
+- Bluefruit library: present, bundled with the core install at
+  `~/Library/Arduino15/packages/adafruit/hardware/nrf52/1.7.0/libraries/Bluefruit52Lib`
+  (not a separate Library Manager install).
