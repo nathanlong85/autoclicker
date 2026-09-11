@@ -46,11 +46,14 @@ replacement. The HID descriptor only needs to declare buttons.
   current interval; releasing stops immediately. No toggle, no persisted "armed" state.
   The host never receives an actual right-click — the button is fully repurposed. The
   first click on press is immediate (not delayed by a full interval), for
-  responsiveness. Pending final confirmation from Colin (see Open Questions).
-- **Scroll wheel:** adjusts the click interval, ~10 ms per detent, clamped to
-  [20 ms, 150 ms] (50–6.7 clicks/sec), default 50 ms (20 clicks/sec) at startup. No
-  scroll events reach the host. Direction (which way = faster) and step size are
-  tunable — see Open Questions.
+  responsiveness. Confirmed by Colin (2026-09-10).
+- **Scroll wheel:** adjusts the click interval, **5 ms per detent** (Colin wanted finer
+  control over a bigger jump), clamped to [20 ms, 150 ms] (50–6.7 clicks/sec), default
+  50 ms (20 clicks/sec) at startup — both confirmed by Colin. No scroll events reach the
+  host. **Rolling the wheel up = slower** (Colin's choice — counterintuitive vs. a
+  typical "scroll up = more/faster" convention, so `firmware/`'s `Wheel` must map
+  physical "up" rotation to a *negative* detent value going into `Clicker::scroll()`,
+  where positive still means faster internally).
 - Manual left clicks work normally on top of an active autoclick stream; they don't
   interfere with the click timer.
 
@@ -108,7 +111,9 @@ right button is held.
 
 Logic:
 - `rightButton(down)` just records held/not-held; no timer starts here.
-- `scroll(detents)`: `intervalMs -= detents * 10`, clamped to [20, 150].
+- `scroll(detents)`: `intervalMs -= detents * 5`, clamped to [20, 150]. Positive
+  `detents` means faster (lower interval) — `firmware/`'s `Wheel` is responsible for
+  turning "physical up rotation" into a *negative* value, per Colin's chosen direction.
 - `update(now_ms)`: if held and `now_ms - lastClickTime >= intervalMs` (or this is the
   first tick since becoming held), mark a click due and record `lastClickTime`.
 
@@ -161,16 +166,19 @@ Driven by Claude, Nate as hands-on-hardware:
 
 Only once all four are green does `core/`/`firmware/` implementation start.
 
-## Open questions (for Colin, not architectural)
+## Open questions — resolved by Colin (2026-09-10)
 
-These don't change the design — they're parameter/behavior choices Colin makes by
-feel once he's using the real device:
+All five parameter/behavior choices flagged for Colin are now answered and reflected
+above:
 
-1. Confirm hold-to-run (vs. a toggle) feels right for Geometry Dash.
-2. Which scroll direction should increase speed.
-3. Whether 10 ms/detent feels right, or should be finer/coarser.
-4. Whether 50 ms is the right default startup speed.
-5. Whether the 20–150 ms range is the right fastest/slowest bound.
+1. Hold-to-run (not a toggle) — **confirmed**.
+2. Scroll direction — **up = slower**.
+3. Step size — **5 ms/detent** (finer control over a bigger jump).
+4. Default startup speed — **50 ms / 20 clicks-per-sec** — matches the original guess.
+5. Speed range — **20–150 ms confirmed as-is**, no change to the fastest end.
+
+He answered by picking from a set of plain-language options, not by reading this
+document.
 
 ## Out of scope for this design
 

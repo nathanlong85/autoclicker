@@ -375,24 +375,26 @@ git commit -m "feat(core): reset click-stream state on release"
 
 **Interfaces:**
 - `scroll(int detents)`: positive `detents` speeds up (lowers `intervalMs()`
-  by `10` per detent), negative slows down. Direction is provisional — see
-  the design doc's Open Questions; flipping it later is a one-line sign
-  change in `firmware/`'s `Wheel`, not here.
+  by `5` per detent, per Colin's "small nudges" choice), negative slows down.
+  Direction of the physical wheel (which rotation produces positive vs.
+  negative `detents`) is `firmware/`'s `Wheel`'s job — Colin chose "up on the
+  wheel = slower," so `Wheel` maps physical-up to negative detents. That
+  mapping lives entirely in `firmware/`, not here.
 
 - [ ] **Step 1: Write the failing test**
 
 ```cpp
-TEST_CASE("scroll adjusts interval by 10ms per detent, clamped to [20, 150]") {
+TEST_CASE("scroll adjusts interval by 5ms per detent, clamped to [20, 150]") {
   Clicker faster;
   faster.scroll(2);
-  CHECK(faster.intervalMs() == 30);  // 50 - 20
+  CHECK(faster.intervalMs() == 40);  // 50 - 10
 
   Clicker clampLow;
-  clampLow.scroll(10);               // would be 50 - 100 = -50
+  clampLow.scroll(10);               // would be 50 - 50 = 0
   CHECK(clampLow.intervalMs() == 20);
 
   Clicker clampHigh;
-  clampHigh.scroll(-11);             // would be 50 + 110 = 160
+  clampHigh.scroll(-21);             // would be 50 + 105 = 155
   CHECK(clampHigh.intervalMs() == 150);
 }
 ```
@@ -409,7 +411,7 @@ Expected: FAIL — `scroll()` currently does nothing, so `intervalMs()` stays
 namespace {
 constexpr uint16_t kMinIntervalMs = 20;
 constexpr uint16_t kMaxIntervalMs = 150;
-constexpr uint16_t kStepMs = 10;
+constexpr uint16_t kStepMs = 5;
 constexpr uint16_t kDefaultIntervalMs = 50;
 }  // (replaces the single-constant anonymous namespace from Task 1)
 
@@ -451,14 +453,14 @@ TEST_CASE("changing speed mid-stream affects the next click, timing stays anchor
   c.update(0);
   CHECK(c.shouldClickNow());   // click #1 at t=0, interval 50ms
 
-  c.scroll(1);                 // slow down slightly: interval becomes 60ms
-  CHECK(c.intervalMs() == 60);
+  c.scroll(-1);                // slow down slightly: interval becomes 55ms
+  CHECK(c.intervalMs() == 55);
 
   c.update(50);
-  CHECK_FALSE(c.shouldClickNow());  // only 50ms elapsed, new interval needs 60
+  CHECK_FALSE(c.shouldClickNow());  // only 50ms elapsed, new interval needs 55
 
-  c.update(60);
-  CHECK(c.shouldClickNow());   // now 60ms have elapsed since click #1
+  c.update(55);
+  CHECK(c.shouldClickNow());   // now 55ms have elapsed since click #1
 }
 ```
 
