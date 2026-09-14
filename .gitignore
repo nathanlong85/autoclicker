@@ -1,0 +1,15 @@
+# Build output (Makefile's `make test`)
+build/
+
+# Compiled objects / binaries
+*.o
+*.hex
+*.elf
+*.bin
+*.uf2
+
+# Arduino IDE
+*.orig
+
+# macOS
+.DS_Store
