@@ -17,14 +17,24 @@ and the hardware-facing firmware. Full hardware/firmware background is in
   RAM), running the Adafruit UF2 bootloader. Currently flashed with CircuitPython —
   will be overwritten.
 - **Battery:** 1050 mAh 3.7 V LiPo soldered to BAT pads; USB-C charging via onboard PMIC.
-- **Power switch (v1, added 2026-09-13):** the donor mouse's bottom switch is rewired
-  between the nice!nano's **EN** pin and GND, not in series with the battery lead. EN
-  low disables the onboard regulator (cutting power to the nRF52840/GPIO) while leaving
-  BAT+/BAT- — and USB-C charging through them — untouched. A switch in series with BAT+
-  was the first instinct but would have blocked charging while off, since BAT+ feeds
-  the onboard charge IC directly. EN pin location to be confirmed against this board's
-  silkscreen during wiring — not expected to differ from the Feather-family reference
-  design nice!nano follows, but not yet visually verified.
+- **Power switch (v1, added 2026-09-13; corrected 2026-09-14):** the nice!nano has no
+  EN pin and no separate regulator between the battery and the nRF52840 — the chip runs
+  directly off BAT+, the same node the onboard charge IC's output lands on. A switch in
+  series with BAT+ was the first instinct but blocks charging while off; there is no
+  EN-style pin to use instead (a documented `P0.13`-controls-VCC feature exists, but
+  it's an internal-only trace to a FET gating the separate accessory-power "VCC" output
+  pin, not exposed on any header, and it can't gate the chip's own supply since the chip
+  has to already be running to drive it — confirmed against the official pinout, which
+  doesn't list P0.13 as a header pin at all).
+
+  Given that, the donor mouse's bottom switch is instead wired as a **plain GPIO input**
+  (with a pull resistor), read by firmware. Flipping it to "off" puts the nRF52840 into
+  its System OFF sleep mode (~1.5–5 µA) with a GPIO sense-wake configured on that same
+  pin, so flipping it back to "on" wakes the chip. The battery stays physically
+  connected the entire time — charging over USB-C works identically regardless of
+  switch position or sleep state. This is the only way to get both "true off" and
+  "charges while off" on this board without cutting a PCB trace; it does mean the power
+  switch is no longer zero-firmware, unlike the original (mistaken) EN-pin design.
 - **Inputs:** left switch, right switch, scroll-wheel quadrature encoder, wheel-click
   switch (pairing button, v1, added 2026-09-13) — desoldered from the donor mouse and
   rewired to nRF52840 GPIO. Pin assignments are decided during implementation, not this
@@ -50,10 +60,10 @@ until then. None of these affect the v1 architecture; they're additive.
 
 **Persistence approach decided now (2026-09-13), implementation still deferred:** v2's
 saved click-speed will write to internal flash on a ~500 ms debounce after the wheel
-settles, rather than on a shutdown signal. This was decided alongside the v1 power
-switch specifically so that choice (a plain EN/GND cutoff, no GPIO involvement) doesn't
-need to change when v2 adds persistence — there's no "about to lose power" moment for
-firmware to catch, since the stored value is always already current.
+settles, rather than on a shutdown signal. There's no "about to lose power" moment for
+firmware to catch either way, since the stored value is always already current — this
+holds regardless of how the power switch itself ended up wired (see Hardware, corrected
+2026-09-14).
 
 Mouse cursor movement is out of scope entirely — this is a clicker, not a mouse
 replacement. The HID descriptor only needs to declare buttons.
@@ -84,6 +94,12 @@ replacement. The HID descriptor only needs to declare buttons.
   before 5000 ms does nothing. There is no distinct "pairing mode" LED state — once the
   bond is wiped, the board is simply advertising with no connection, which is already
   the existing "not paired" state below.
+- **Power switch (v1, corrected 2026-09-14):** reads as a plain GPIO level, checked
+  once in `setup()` and once per `loop()` iteration. "Off" → enter nRF52840 System OFF
+  sleep with a sense-wake configured on the switch pin (execution halts entirely until
+  the wake condition fires — no `Clicker`/BLE state to preserve across it, since v1 has
+  no persistence yet). "On" → normal operation. The battery remains connected
+  throughout, so USB-C charging is unaffected by switch position.
 
 **RGB LED indicator (v1, added 2026-09-10; remapped 2026-09-13):** a common-4-leg RGB
 LED shows connection and speed status, standing in until an OLED is added in v2:
@@ -126,7 +142,9 @@ autoclicker/
     LedColorPicker.h/.cpp          — pure: (connected, intervalMs) -> RGB
                                       (clicking dropped 2026-09-13)
     SpeedLed.h/.cpp                — thin: 3x analogWrite() around LedColorPicker
-    autoclicker.ino                — setup()/loop(), wires everything together
+    autoclicker.ino                — setup()/loop(), wires everything together, incl.
+                                      the power-switch System OFF sleep check
+                                      (v1, corrected 2026-09-14)
   test/
     doctest.h                      — vendored single-header test framework
     test_clicker.cpp               — Colin's tests for core/
@@ -207,9 +225,16 @@ manual checklist instead.)
   `Bluefruit.disconnect()` + `Bluefruit.clearBonds()` + restarting advertising. Called
   once, when `PairingButton` reports a triggered long-press. Untested glue, same tier as
   the rest of `Mouse`.
+- **Power-switch sleep check** (v1, corrected 2026-09-14) — lives directly in
+  `autoclicker.ino`, not a separate unit: no pure logic to extract beyond a one-line
+  level check, and entering System OFF (`sd_power_system_off()` + a sense-wake
+  configured via the nRF52 core's GPIO cfg calls) is a platform call that can't run
+  host-side. Checked once in `setup()` and once per `loop()` iteration. Untested glue,
+  verified only by the manual checklist (switch off → board goes dark and stops
+  responding to input; switch on → resumes; charges over USB-C in either position).
 - **`autoclicker.ino`** — owns `setup()`/`loop()`, reads `Button`/`Wheel`/
-  `PairingButton`, drives `Clicker`, drives `Mouse` and `SpeedLed`. No behavioral logic
-  of its own.
+  `PairingButton`/the power switch, drives `Clicker`, drives `Mouse` and `SpeedLed`. No
+  behavioral logic of its own beyond the sleep check above.
 
 Bluefruit's `BLEHidAdafruit` handles BLE mouse advertising and the HID descriptor; no
 hand-rolled HID report format is needed. Connection state for `SpeedLed` comes from
@@ -221,8 +246,8 @@ hand-rolled HID report format is needed. Connection state for `SpeedLed` comes f
 |---|---|---|
 | `core::Clicker` | Unit, `test/test_clicker.cpp`, host-run via `make test` | Colin |
 | `firmware::Debouncer`, `QuadratureDecoder`, `HidButtonState`, `LedColorPicker`, `LongPressDetector` | Unit, host-run via `make test` | Claude |
-| `Button`, `Wheel`, `PairingButton`, `Mouse`, `SpeedLed` (one-line GPIO/BLE/PWM glue) | Not unit tested — covered by step 0 and final-assembly manual checks | — |
-| End-to-end (real board, real inputs, real Bluetooth) | Manual checklist: pairs on Mac/iPhone/Android; left/right/wheel behavior matches spec; holding the wheel-click button 5s forgets and re-pairs; LED shows the right color/state for both connection states across the speed range; power switch cuts power without blocking USB-C charging; fits in shell | Nate + Colin |
+| `Button`, `Wheel`, `PairingButton`, `Mouse`, `SpeedLed`, power-switch sleep check (one-line GPIO/BLE/PWM/sleep glue) | Not unit tested — covered by step 0 and final-assembly manual checks | — |
+| End-to-end (real board, real inputs, real Bluetooth) | Manual checklist: pairs on Mac/iPhone/Android; left/right/wheel behavior matches spec; holding the wheel-click button 5s forgets and re-pairs; LED shows the right color/state for both connection states across the speed range; power switch off → board dark/unresponsive, on → resumes, USB-C charges in either position; fits in shell | Nate + Colin |
 
 `make test` compiles `core/` and `firmware/`'s pure classes plus `test/` with the host
 `g++`/`clang++` — no Arduino involvement, runs in well under a second. Firmware is
@@ -262,12 +287,22 @@ Three additions worked out with Nate, all reflected above:
    re-advertise (a full forget-and-re-pair, not just a disconnect).
 2. LED speed gradient direction flipped to traffic-light convention (green=fastest,
    red=slowest), and the paired-idle/paired-clicking distinction dropped.
-3. Power switch wired to the nice!nano's EN pin (regulator disable) rather than in
-   series with the battery lead, so USB-C charging isn't blocked while the switch is
-   off — caught before it became a wiring mistake, since BAT+ feeds the onboard charge
-   IC directly. Decided alongside this: v2's flash persistence will write on a
-   debounced settle rather than on a shutdown signal, so this switch choice doesn't
-   need to change when that lands.
+3. Power switch: **not** wired to an EN pin (this board has none — see correction
+   below), but not in series with the battery lead either, so USB-C charging isn't
+   blocked while the switch is off. Decided alongside this: v2's flash persistence will
+   write on a debounced settle rather than on a shutdown signal, so the switch design
+   doesn't need to change when that lands.
+
+## Correction — power switch (resolved by Nate, 2026-09-14)
+
+Nate checked the nice!nano's actual pinout and found no EN pin exists — the 2026-09-13
+addendum above was wrong. Corrected design (detailed in Hardware and Behavior above):
+the switch wires to a plain GPIO input instead. Firmware puts the nRF52840 into System
+OFF sleep when it reads "off" (with a sense-wake on that pin so flipping it back on
+wakes the chip), rather than any hardware-only power gating. The battery stays
+connected throughout, so this still achieves the original goal — off means off,
+charging still works — just via firmware instead of a dedicated regulator-disable pin
+this board doesn't have.
 
 ## Out of scope for this design
 
