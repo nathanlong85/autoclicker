@@ -13,3 +13,7 @@ build/
 
 # macOS
 .DS_Store
+
+# Raw diagnostic capture data (large, not source) — see
+# docs/scroll-wheel-investigation.md for how these were produced
+wheel_log*.csv
