@@ -17,3 +17,4 @@ build/
 # Raw diagnostic capture data (large, not source) — see
 # docs/scroll-wheel-investigation.md for how these were produced
 wheel_log*.csv
+scratch/wheel_diag/captures/

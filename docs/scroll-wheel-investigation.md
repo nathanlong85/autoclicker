@@ -167,6 +167,90 @@ investigation has run into. See the design/brainstorming discussion around
 easier, lower-risk choice for any *future* donor mouse, even though this
 current M325 turned out to be optical).
 
+## Logic analyzer capture procedure
+
+Written 2026-09-28, before the first capture. Items marked **(unverified)** are
+assumptions to confirm on the bench, not known facts.
+
+### Why this capture may look different from what we expect
+
+- **`bottom` may be a strobe, not a wheel signal.** Test 6 logged 74,000+ edges
+  in ~20 s (~3,700 edges/s). A hand-spun wheel with a few dozen slots should
+  produce a few hundred edges/s at most. One possible explanation: the original
+  circuit pulses the LED (`LD2`) to save battery, and `bottom` is showing that
+  strobe rather than slot transitions. If so, the "single channel" result could
+  be an artifact of us sampling asynchronously to a strobe. **(unverified)**
+- **This is why the capture includes `LD2`,** and why the sample rate is high.
+- **Threshold risk.** `bottom` only reaches ~2 V high and `middle` sits at
+  ~2.2–2.8 V. The analyzer's input threshold may be near that range, same as
+  the nRF52840 problem in test 2. If a channel looks stuck or noisy, suspect
+  the threshold before suspecting the sensor. **(unverified)**
+
+### Software (Mac)
+
+1. `brew install sigrok-cli`. PulseView is not in Homebrew core; get it from
+   sigrok.org if we want the GUI. `sigrok-cli` alone is enough, since it writes
+   `.sr` files that we can analyze with a script.
+2. The analyzer needs the `fx2lafw` firmware, which it loads on connect. Run
+   `sigrok-cli --scan`. If the device shows up as `fx2lafw`, we're done. If not,
+   the firmware files are missing and need to be installed from sigrok.org.
+   **(unverified: whether Homebrew's libsigrok bundles them)**
+
+### Wiring
+
+Mouse board stays **as it was in test 5's baseline**: original battery, original
+RF receiver plugged into the PC, nice!nano fully **disconnected** (not just
+unpowered). The analyzer is a passive observer.
+
+| Analyzer channel | Connect to | Why |
+|---|---|---|
+| GND | `TP18` (board GND, same net as `LQ1` top) | Shared reference. Required. |
+| CH0 | `LQ1` bottom | The known-live pin |
+| CH1 | `LQ1` middle | The "inert" pin |
+| CH2 | `LD2` pin 1 | Checks for LED strobing |
+| CH3 | `LD2` pin 2 | Same, other leg |
+
+- Use the analyzer's mini-grabbers or a fine-tip probe. Don't solder new tap
+  wires; test 5 showed added wire/capacitance can break the original circuit.
+- Don't power the mouse from anything but its own battery while the analyzer's
+  USB ground is attached.
+- **Sanity check first:** with everything attached, does the mouse still scroll
+  on the PC? If not, that's test 5 again. It's a useful finding on its own, so
+  record it and stop; don't force it.
+
+### Captures
+
+Sample rate 4 MHz for the first pass. That's 1000x the observed edge rate and
+well under the analyzer's 24 MHz ceiling. Raise it if the first capture shows
+edges only one sample wide.
+
+Save each as `scratch/wheel_diag/captures/<name>.sr`. Don't commit them. Add
+the directory to `.gitignore`, like the `wheel_log*.csv` files.
+
+| # | Name | Action | What we're looking for |
+|---|---|---|---|
+| 1 | `idle` | Wheel untouched, 5 s | Is anything toggling with no input? A steady strobe on `LD2`/`bottom` confirms the strobe theory. |
+| 2 | `spin_up` | Steady slow spin one way, ~5 s | Edge rate and shape on each channel |
+| 3 | `spin_down` | Same, other way | Does anything differ from `spin_up`? Timing, phase, which channel moves? |
+| 4 | `one_notch` | A single slow detent click, one direction | The cleanest look at what one step does |
+| 5 | `blocked` | Hold a piece of card in the beam gap, 3 s | Confirms `bottom` is the receiver output and shows the blocked-state levels |
+
+Command shape **(unverified until we see the device's real name)**:
+`sigrok-cli -d fx2lafw --config samplerate=4m -C D0,D1,D2,D3 --time 5s -o scratch/wheel_diag/captures/idle.sr`
+
+### Reading the results
+
+- **If `LD2` is strobing:** the receiver output only means something when
+  sampled in sync with the strobe. Re-analyze `bottom`/`middle` gated by `LD2`.
+  `middle` may turn out to be live once we do that.
+- **If `middle` toggles in any capture:** tests 4 and 6 were wrong somehow.
+  Compare its phase against `bottom` between `spin_up` and `spin_down`.
+  That's the quadrature we've been missing.
+- **If `middle` is dead in every capture and `LD2` is steady:** the
+  contradiction is real and the fallback applies (mechanical-encoder donor).
+- **If channels look stuck at one level:** rule out the threshold problem
+  first. Compare against the multimeter levels from the table above.
+
 ## Related scratch files
 
 - `scratch/wheel_diag/wheel_diag.ino` — the current (interrupt-based)
