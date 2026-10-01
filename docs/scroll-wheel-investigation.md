@@ -220,9 +220,11 @@ unpowered). The analyzer is a passive observer.
 
 ### Captures
 
-Sample rate 4 MHz for the first pass. That's 1000x the observed edge rate and
-well under the analyzer's 24 MHz ceiling. Raise it if the first capture shows
-edges only one sample wide.
+Sample rate **1 MHz**. The fastest signal seen so far (`LD2`'s strobe during
+spinning, ~3,800–4,000 edges/sec, ~2 kHz) is still oversampled ~500x at this
+rate — comfortably more than the 2x (Nyquist) minimum — and 1 MHz keeps the
+`.sr` files and any CSV-based analysis much faster to work with than 4 MHz
+turned out to be. Raise it if a capture shows edges only one sample wide.
 
 Save each as `scratch/wheel_diag/captures/<name>.sr`. Don't commit them. Add
 the directory to `.gitignore`, like the `wheel_log*.csv` files.
@@ -235,8 +237,41 @@ the directory to `.gitignore`, like the `wheel_log*.csv` files.
 | 4 | `one_notch` | A single slow detent click, one direction | The cleanest look at what one step does |
 | 5 | `blocked` | Hold a piece of card in the beam gap, 3 s | Confirms `bottom` is the receiver output and shows the blocked-state levels |
 
-Command shape **(unverified until we see the device's real name)**:
-`sigrok-cli -d fx2lafw --config samplerate=4m -C D0,D1,D2,D3 --time 5s -o scratch/wheel_diag/captures/idle.sr`
+Command shape (confirmed — analyzer is a WeAct DLA Mini, detected by
+`sigrok-cli --scan` as `fx2lafw` with 8 channels `D0`–`D7`; no separate
+firmware install needed, Homebrew's `sigrok-cli` bundled it):
+`sigrok-cli -d fx2lafw --config samplerate=1m -C D0,D1,D2,D3 --time 5s -o scratch/wheel_diag/captures/idle.sr`
+
+### First capture round (2026-09-28) — a broken lead, not a dead channel
+
+The first full set of 5 captures gave `D0`/`D1` exactly 4 edges each, in every
+single capture regardless of condition (idle, blocked, spinning). That turned
+out to be a broken test lead on `D0` (physically ripped), not a real finding —
+discovered via the board's own per-channel LEDs (see below). **That capture
+round should be disregarded**; the files were overwritten by the retake.
+
+**The WeAct DLA Mini has two per-channel activity LEDs** (confirmed via its
+GitHub repo, [WeActStudio/LogicAnalyzerV1](https://github.com/WeActStudio/LogicAnalyzerV1)):
+green = `D0`/CH0, blue = `D1`/CH1. (A third, orange LED is power/enumeration —
+unrelated.) Useful as a live pre-capture sanity check, but their behavior
+turned out to be more subtle than a simple logic-level readout:
+
+- A steady DC level, even one above the analyzer's `VIH >2V` threshold, does
+  **not** light the LED — confirmed when `middle` (soldered, ~2.2V constant)
+  left `D1`'s blue LED dark. This is consistent with (not a contradiction of)
+  `middle` having no real signal — it reads as "no edges," matching tests 1/4/6.
+- The LEDs are closer to **edge/activity detectors** than level detectors:
+  they react to toggling, not to a static voltage, regardless of how high that
+  voltage sits.
+- **A hand-held (unsoldered) lead resting against a test point is not a
+  reliable way to read these LEDs** — contact chatter from an unsecured touch
+  can itself look like "activity." Only trust the LED once the lead is
+  properly soldered or clipped.
+- **With the mouse battery removed, both `LQ1` legs float** and both LEDs lit
+  solid at low, unstable-looking voltages (0.523V on `middle`, 0.915V on
+  `bottom`) — a floating-input artifact of the analyzer's own input circuitry,
+  not a property of the mouse's sensor. Always capture with the mouse's
+  battery installed.
 
 ### Reading the results
 
