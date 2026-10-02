@@ -1,6 +1,8 @@
 # Scroll Wheel Sensor Investigation
 
-**Status as of 2026-09-17: unresolved, paused pending a logic analyzer.**
+**Status as of 2026-10-02: resolved.** `bottom` alone does carry direction —
+see [Resolution](#resolution-2026-10-02) below. Sections above this point are
+kept as a record of how we got there.
 
 ## Context
 
@@ -285,6 +287,104 @@ turned out to be more subtle than a simple logic-level readout:
   contradiction is real and the fallback applies (mechanical-encoder donor).
 - **If channels look stuck at one level:** rule out the threshold problem
   first. Compare against the multimeter levels from the table above.
+
+## Resolution (2026-10-02)
+
+Direction is encoded on `bottom` alone, as the rate of an occasional **extra
+pulse** — not as pulse width/duty-cycle, which test 3 and the pulse-width
+re-test below both ruled out.
+
+### What the signal actually looks like
+
+At high enough sample rate (8 MHz on D0 only), `bottom` isn't a clean slot-open
+square wave — it's a train of very narrow (~0.6–0.75µs) pulses, almost always
+arriving in **pairs**, about 480µs apart, pair after pair, whether the wheel is
+moving or not (idle just has far fewer pairs per second than active spinning).
+Occasionally — a few percent of the time — a pair becomes a **triple**: three
+narrow pulses close together instead of two.
+
+That extra-pulse rate is the signal:
+
+| Direction | Rate of 3-pulse bursts (vs. the usual 2-pulse) |
+|---|---|
+| "up" | ~0%, never above 0.4% in any test window |
+| "down" | ~1.4%–4.9%, never below 1.4% in any test window |
+
+Four separate capture sessions (two single-direction pairs, plus a 10s and a
+15s capture spanning live, stopwatch-timed direction changes mid-capture) all
+land in those same two non-overlapping bands, with the transition between
+them landing within ~20-50ms of the actual stopwatch-marked switch. Full data
+in the session log below.
+
+### What this rules out, and what it doesn't
+
+- **Rules out:** the "pulse-width/asymmetric-timing" theory from test 3 and
+  the external research cited above (a clean, continuously-variable timing
+  code on one wire). The signal is binary in effect — 2-pulse or 3-pulse —
+  not a smoothly varying analog timing code.
+- **Rules out:** a wiring/crosstalk artifact. The pattern persists identically
+  whether `LD2` is connected to the analyzer or not.
+- **Doesn't fully explain *why*** `LQ1` does this. Current best guess: `LQ1`
+  isn't a bare photodiode — it (or logic elsewhere on the board sharing the
+  same net) likely does some of its own debounce/edge-confirmation, and the
+  3rd pulse is a byproduct of that internal logic reacting differently to the
+  slot edge depending on which way it's moving. Not confirmed, not needed to
+  be confirmed to use the result.
+- **Also explains a real-world observation:** Nate noticed the original mouse
+  has a short lag right after reversing direction, but not on stop/restart in
+  the same direction. That's consistent with the *original* mouse's own
+  firmware needing to accumulate a few 3-pulse events (or their absence)
+  before trusting a direction flip. Our raw signal switches within one burst
+  period (~480µs) — any felt lag is the downstream decode logic's choice, not
+  a limitation of the sensor itself.
+
+### Decode approach for firmware
+
+Track a rolling window of recent bursts (pairs of near-simultaneous rising
+edges on `bottom`, i.e. edges less than ~20µs apart belong to the same burst).
+Count how many of the last *N* bursts had a 3rd pulse. Above a threshold
+(empirically, anything over ~1% separates cleanly from the ~0% "up" floor),
+call it "down"; at/near zero, call it "up". At the observed ~480µs burst
+period, even N=100 bursts is under 50ms — comfortably fast for this project's
+needs. Exact N and threshold still need tuning against real `core/`
+integration, not just captured data.
+
+### Session log (2026-09-28 – 2026-10-02)
+
+1. First capture round (1 MHz, all 5 planned captures) showed `bottom` and
+   `middle` both flat — traced to a broken `D0` test lead, found via the
+   WeAct analyzer's per-channel activity LEDs (see above). Retaken.
+2. Second round (1 MHz, lead repaired): `middle` flat (4 "real" edges — see
+   note below on a parsing bug), confirming tests 1/4/6 via a 4th, solidly
+   soldered method. `bottom` showed strong edge-rate correlation with actual
+   spinning (~40/s idle vs. ~4,000–5,300/s while spinning) but also an
+   unexplained tight ratio to `LD2`'s strobe rate across all conditions.
+3. Repeated `spin_up` with `LD2` physically disconnected: `bottom`'s edge
+   count barely changed (26,696 vs. 26,522 edges), ruling out probe-harness
+   crosstalk as the explanation for that ratio.
+4. Pulse-width histogram comparison (`spin_up` vs `spin_down` at 1 MHz) found
+   no distinguishable difference — ruled out duty-cycle/pulse-width direction
+   encoding; also showed `bottom`'s "high" pulses sit at the 1 MHz sampling
+   floor (1µs), prompting a higher-rate recapture.
+5. 8 MHz, D0-only recapture resolved the pulses as genuinely narrow
+   (~0.6–0.75µs), not a resolution artifact, and revealed the burst
+   (2-pulses-per-group) structure invisible at 1 MHz.
+6. Burst-size comparison at 8 MHz found the 3-pulse-burst rate asymmetry
+   (~0.04%/0% "up" vs ~3.7–4.1% "down") and it reproduced on a second,
+   independent pair of captures.
+7. Two live, stopwatch-timed direction-change captures (10s with 1 switch,
+   15s with 2 switches) confirmed the rate transition tracks the real,
+   physical direction change, landing within tens of milliseconds of the
+   marked switch time, with zero overlap between the "up" and "down" rate
+   bands across all 30+ half-second windows checked.
+
+**Correction, logged for anyone reading the raw numbers later:** early edge
+counts (section above, "2 Second capture round") included a stray baseline of
+exactly 4 edges on every dead channel — this is an off-by-N bug in the
+analysis script (it was including 3 CSV header lines as if they were data
+rows), not a real signal. It didn't change any conclusion, since every real
+comparison in this doc is between much larger numbers, but it's why "dead"
+channels read "4" instead of "0" earlier on.
 
 ## Related scratch files
 
