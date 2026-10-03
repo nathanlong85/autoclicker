@@ -1,5 +1,16 @@
 # Step 0: Hardware Bring-Up Implementation Plan
 
+**Status (2026-10-03): complete.** All four tasks done 2026-09-11 — see
+`docs/hardware-bringup-log.md` for the actual results, including two
+substitutions from this plan's literal steps: `arduino-cli` was used
+instead of the Arduino IDE GUI, and the board FQBN is
+`adafruit:nrf52:feather52840` (no real nice!nano board definition exists
+in the installed core) rather than an IDE "nice!nano" menu entry — both
+already anticipated as fallbacks below. `core/`/`firmware/` implementation
+is unblocked. (Checkboxes below were left unchecked after the work was
+actually done — fixed now so a fresh session doesn't mistake this for
+not-yet-started.)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Human-in-the-loop note:** every task in this plan requires a person at the
@@ -43,7 +54,7 @@ library, nice!nano v2 (nRF52840).
 
 **Interfaces:** None — no code yet.
 
-- [ ] **Step 1: Plug in the board via USB-C and check what macOS sees**
+- [x] **Step 1: Plug in the board via USB-C and check what macOS sees**
 
 Run (Nate, via `!`):
 ```bash
@@ -53,7 +64,7 @@ Expected: an entry showing a Nordic Semiconductor USB device, OR nothing
 matches (which likely means it's in bootloader/CDC mode, not a "device" USB
 class — that's fine, check step 2 next).
 
-- [ ] **Step 2: Check for the UF2 bootloader drive**
+- [x] **Step 2: Check for the UF2 bootloader drive**
 
 Run:
 ```bash
@@ -64,7 +75,7 @@ currently sitting in bootloader mode. If it's not there, double-tap the reset
 button on the board (Colin does this) and re-run — this is how you force it
 into bootloader mode.
 
-- [ ] **Step 3: Record the findings**
+- [x] **Step 3: Record the findings**
 
 Create `docs/hardware-bringup-log.md`:
 
@@ -83,7 +94,7 @@ Create `docs/hardware-bringup-log.md`:
 
 Fill in the actual values observed, not placeholders.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/hardware-bringup-log.md
@@ -99,23 +110,23 @@ git commit -m "docs: log step 0 task 1 — board identification"
 
 **Interfaces:** None — no code yet.
 
-- [ ] **Step 1: Install Arduino IDE**
+- [x] **Step 1: Install Arduino IDE**
 
 If not already installed: `! brew install --cask arduino-ide` (or download
 from arduino.cc if Homebrew cask is unavailable). Confirm it launches.
 
-- [ ] **Step 2: Add the Adafruit board index**
+- [x] **Step 2: Add the Adafruit board index**
 
 In Arduino IDE: Preferences → "Additional Boards Manager URLs" → add:
 ```
 https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
 ```
 
-- [ ] **Step 3: Install the Adafruit nRF52 board package**
+- [x] **Step 3: Install the Adafruit nRF52 board package**
 
 Tools → Board → Boards Manager → search "Adafruit nRF52" → Install.
 
-- [ ] **Step 4: Select the board**
+- [x] **Step 4: Select the board**
 
 Tools → Board → look for "nice!nano" under the Adafruit nRF52 boards list.
 
@@ -124,13 +135,13 @@ Tools → Board → look for "nice!nano" under the Adafruit nRF52 boards list.
 - If absent: select "Adafruit Feather nRF52840 Express" instead (nice!nano is
   pin/feature-compatible) and note this substitution in the log.
 
-- [ ] **Step 5: Install the Bluefruit library**
+- [x] **Step 5: Install the Bluefruit library**
 
 Sketch → Include Library → Manage Libraries → search "Adafruit Bluefruit
 nRF52 Libraries" → Install (this usually comes bundled with the board
 package — confirm it's present rather than reinstalling if so).
 
-- [ ] **Step 6: Record findings and commit**
+- [x] **Step 6: Record findings and commit**
 
 Append to `docs/hardware-bringup-log.md`:
 ```markdown
@@ -157,27 +168,27 @@ git commit -m "docs: log step 0 task 2 — toolchain install"
 
 **Interfaces:** None — no application code yet.
 
-- [ ] **Step 1: Open the Blink example**
+- [x] **Step 1: Open the Blink example**
 
 File → Examples → 01.Basics → Blink.
 
-- [ ] **Step 2: Select the correct port**
+- [x] **Step 2: Select the correct port**
 
 Tools → Port → select the nice!nano's serial port (macOS shows it as
 `/dev/cu.usbmodem*`). If no port shows, double-tap reset to get back into
 bootloader mode and retry.
 
-- [ ] **Step 3: Upload**
+- [x] **Step 3: Upload**
 
 Click Upload. Expected: compiles without error, uploads without error, and
 the message ends with something like "Upload complete."
 
-- [ ] **Step 4: Confirm the physical result (Colin checks this)**
+- [x] **Step 4: Confirm the physical result (Colin checks this)**
 
 Expected: the onboard LED blinks on/off in a steady ~1-second rhythm. Colin
 confirms and reports back.
 
-- [ ] **Step 5: Record findings and commit**
+- [x] **Step 5: Record findings and commit**
 
 ```markdown
 ## Task 3: Blink — <date>
@@ -205,7 +216,7 @@ git commit -m "docs: log step 0 task 3 — blink flash confirmed"
 **Interfaces:** None — this sketch is deliberately disposable and shares no
 code with `core/`/`firmware/`.
 
-- [ ] **Step 1: Write the bare BLE HID mouse sketch**
+- [x] **Step 1: Write the bare BLE HID mouse sketch**
 
 ```cpp
 // bare_ble_mouse.ino
@@ -260,12 +271,12 @@ void loop() {
 }
 ```
 
-- [ ] **Step 2: Upload it**
+- [x] **Step 2: Upload it**
 
 Same as Task 3: select port, Upload. Expected: compiles, uploads without
 error.
 
-- [ ] **Step 3: Pair with a Mac**
+- [x] **Step 3: Pair with a Mac**
 
 System Settings → Bluetooth → find "Autoclicker Bringup Test" → Connect.
 Expected: pairs successfully, appears as a mouse. Press the button wired to
@@ -273,19 +284,19 @@ Expected: pairs successfully, appears as a mouse. Press the button wired to
 wired yet) — expected: a left click registers on the Mac (e.g. click-drag a
 window, or click into a text field and see the cursor respond).
 
-- [ ] **Step 4: Pair with an iPhone**
+- [x] **Step 4: Pair with an iPhone**
 
 Settings → Bluetooth → find and connect. iOS treats a paired BLE HID mouse as
 a pointer device — expected: connects, and pressing the button produces a
 click (visible as the on-screen pointer/cursor if iOS shows one, or by its
 effect, e.g. tapping a button in an app).
 
-- [ ] **Step 5: Pair with an Android device**
+- [x] **Step 5: Pair with an Android device**
 
 Settings → Bluetooth → find and connect. Expected: connects, click registers
 the same way.
 
-- [ ] **Step 6: Record findings and commit**
+- [x] **Step 6: Record findings and commit**
 
 ```markdown
 ## Task 4: Bare BLE HID mouse — <date>
