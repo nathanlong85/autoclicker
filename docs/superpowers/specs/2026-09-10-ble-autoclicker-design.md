@@ -131,11 +131,16 @@ autoclicker/
   firmware/
     Button.h/.cpp                  — GPIO + Debouncer, thin
     Debouncer.h/.cpp               — pure debounce logic (Claude's)
-    Wheel.h/.cpp                   — GPIO interrupt + WheelPulseDecoder, thin
-                                      (corrected 2026-10-02 — single pin, not two)
-    WheelPulseDecoder.h/.cpp       — pure single-pin pulse decode logic (Claude's)
-                                      (renamed/redesigned 2026-10-02, was
-                                      QuadratureDecoder)
+    Wheel.h/.cpp                   — GPIO interrupt + BurstGrouper +
+                                      WheelPulseDecoder, thin (corrected
+                                      2026-10-02 — single pin, not two)
+    BurstGrouper.h/.cpp            — pure: edge timestamps -> completed burst
+                                      sizes (added 2026-10-02, split out of
+                                      what the Correction below originally
+                                      described as one class)
+    WheelPulseDecoder.h/.cpp       — pure: burst sizes -> direction
+                                      classification (renamed/redesigned
+                                      2026-10-02, was QuadratureDecoder)
     HidButtonState.h/.cpp          — composes "held" + "pulse" into HID report state
     PairingButton.h/.cpp           — GPIO + Debouncer + LongPressDetector, thin
                                       (v1, added 2026-09-13)
@@ -153,7 +158,8 @@ autoclicker/
     doctest.h                      — vendored single-header test framework
     test_clicker.cpp               — Colin's tests for core/
     test_debouncer.cpp             — Claude's tests for firmware/'s pure pieces
-    test_wheel_pulse_decoder.cpp     — (renamed 2026-10-02, was test_quadrature_decoder.cpp)
+    test_burst_grouper.cpp         — (added 2026-10-02)
+    test_wheel_pulse_decoder.cpp   — (renamed 2026-10-02, was test_quadrature_decoder.cpp)
     test_hid_button_state.cpp
     test_long_press_detector.cpp   — (v1, added 2026-09-13)
     test_led_color_picker.cpp
@@ -207,18 +213,29 @@ manual checklist instead.)
 - **`Debouncer`** — pure: `bool update(bool raw_reading, uint32_t now_ms)`. `Button`
   wraps one `digitalRead()` call around it — that one line is the only untested part of
   input handling.
+- **`BurstGrouper`** (added 2026-10-02) — pure: `bool pulse(uint32_t now_us, int*
+  completed_burst_size)`, fed one call per rising edge on the single data pin.
+  Groups edges less than 20µs apart into one burst; returns true (with the
+  finished burst's pulse count) exactly when a new edge's gap confirms the
+  previous burst ended. See implementation plan for full rationale and tests.
 - **`WheelPulseDecoder`** (corrected 2026-10-02, was `QuadratureDecoder` — see
-  Correction below) — pure, but the exact signature and internal windowing are **not
-  yet settled**, pending calibration against real hardware during implementation:
-  conceptually `int update(bool is_triple_burst)`, fed one call per detected pulse
-  burst on the single data pin, tracking a rolling window of recent burst sizes and
-  reporting direction once the 3-pulse rate clears an empirically-chosen threshold.
-  `Wheel` wraps one GPIO interrupt (not `digitalRead()` polling — the real pulses are
-  sub-microsecond, see the investigation doc) plus burst-grouping around it. **Still
-  open:** how many bursts correspond to one physical wheel detent is not yet known —
-  investigation confirmed direction, not detent-to-burst scaling. That mapping needs
-  its own calibration pass on real hardware before `Wheel` can call
-  `Clicker::scroll()` with correctly-paced detent counts.
+  Correction below) — pure: `Direction update(int burst_size)`, fed each
+  completed burst size from `BurstGrouper`. Tracks a rolling window of recent
+  burst sizes and reports `kHighTripleRate`/`kLowTripleRate`/`kUnknown` (window
+  not yet full) based on the fraction of 3-or-more-pulse bursts. Starting
+  constants (window=100 bursts, threshold=1.00%) come from the investigation's
+  captured data, **not yet calibrated against real nice!nano GPIO-interrupt
+  hardware** — see implementation plan's hands-on calibration tasks. Direction
+  is intentionally reported in signal terms, not "up"/"down" — mapping a
+  trip-rate band to a physical rotation direction is `Wheel`'s job, decided
+  during calibration, same as `Wheel`'s existing up→negative-detent mapping.
+  `Wheel` wraps one GPIO interrupt (not `digitalRead()` polling — the real
+  pulses are sub-microsecond, see the investigation doc) around both of the
+  above. **Still open:** how many bursts correspond to one physical wheel
+  detent is not yet known — investigation confirmed direction, not
+  detent-to-burst scaling. That mapping needs its own calibration pass on real
+  hardware before `Wheel` can call `Clicker::scroll()` with correctly-paced
+  detent counts.
 - **`HidButtonState`** — pure: composes a real held-left-button state with autoclick
   "pulses" into the correct sequence of HID press/release reports, so an autoclick
   pulse firing while the player is genuinely holding left doesn't emit a spurious
@@ -259,7 +276,7 @@ hand-rolled HID report format is needed. Connection state for `SpeedLed` comes f
 | Layer | Tests | Author |
 |---|---|---|
 | `core::Clicker` | Unit, `test/test_clicker.cpp`, host-run via `make test` | Colin |
-| `firmware::Debouncer`, `WheelPulseDecoder`, `HidButtonState`, `LedColorPicker`, `LongPressDetector` | Unit, host-run via `make test` | Claude |
+| `firmware::Debouncer`, `BurstGrouper`, `WheelPulseDecoder`, `HidButtonState`, `LedColorPicker`, `LongPressDetector` | Unit, host-run via `make test` | Claude |
 | `Button`, `Wheel`, `PairingButton`, `Mouse`, `SpeedLed`, power-switch sleep check (one-line GPIO/BLE/PWM/sleep glue) | Not unit tested — covered by step 0 and final-assembly manual checks | — |
 | End-to-end (real board, real inputs, real Bluetooth) | Manual checklist: pairs on Mac/iPhone/Android; left/right/wheel behavior matches spec; holding the wheel-click button 5s forgets and re-pairs; LED shows the right color/state for both connection states across the speed range; power switch off → board dark/unresponsive, on → resumes, USB-C charges in either position; fits in shell | Nate + Colin |
 
