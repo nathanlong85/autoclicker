@@ -32,8 +32,11 @@ not childish.
 - Runs the Adafruit UF2 bootloader (0.6.0); currently flashed with CircuitPython 10.3.0
   (to be overwritten). UF2 drag-and-drop and CDC serial DFU both verified working.
 - Battery: 1050 mAh 3.7 V LiPo, soldered to BAT pads. USB-C charging via onboard PMIC.
-- Inputs: left switch, right switch, scroll quadrature encoder — all rewired from the
-  original mouse to nRF52840 GPIO. Pin assignments TBD.
+- Inputs: left switch, right switch, scroll wheel (single-pin pulse signal, not
+  quadrature — see `docs/scroll-wheel-investigation.md`), scroll wheel left/right tilt
+  buttons (confirmed to exist 2026-10-03, not yet electrically characterized — pins/
+  signal type unknown) — all rewired from the original mouse to nRF52840 GPIO. Pin
+  assignments TBD.
 
 ## Firmware
 
@@ -70,7 +73,14 @@ not childish.
   `firmware/LedColorPicker` (tested); `firmware/SpeedLed` wraps 3 `analogWrite()` calls
   around it (untested glue). Pins/polarity decided during step 0/wiring.
 - **v2 candidates:** flash persistence of speed, deep sleep / low power, 0.42" I2C OLED
-  (72×40, SSD1306, U8g2 library) showing the exact speed value.
+  (72×40, SSD1306, U8g2 library) showing the exact speed value, and a battery-level
+  readout on that same OLED — triggered by a press of the left wheel-tilt button,
+  tabled 2026-10-03 rather than forced onto the v1 LED (already carrying 3 meanings:
+  pairing state, idle, speed gradient — a 4th would overload it). Provisional behavior
+  from that discussion, pending Colin's confirmation whenever this gets picked up:
+  left tilt button (not hold, just press) shows battery status for ~5s; a scroll
+  during that window finishes the battery display first, then catches up on the speed
+  color; a second press while already showing does nothing (doesn't restart the timer).
 
 ### Step 0 (before any core logic)
 
