@@ -366,6 +366,39 @@ The investigation measured direction, not this scaling — it needs its own cali
 pass against real hardware during `firmware/` implementation, separate from the
 algorithm/threshold tuning the burst-rate direction detector itself still needs.
 
+## Open question — powering the mouse sensor circuit (raised 2026-10-03)
+
+Every test in `docs/scroll-wheel-investigation.md` kept the donor mouse's **own**
+battery and board intact specifically because `LQ1`/`LD2` are powered through
+whatever regulation exists on that board, not raw battery voltage — `middle`
+measures a steady ~2.2–2.8V, well above what the mouse's **single AA cell**
+(nominal ~1.5V) can supply directly. A tiny inductor near the battery contacts
+(confirmed 2026-10-03) means there's almost certainly a small boost converter on
+the donor board doing that step-up.
+
+In the final assembly, the donor board has to stay physically intact and mounted
+in place (its components can't be desoldered without losing alignment with the
+shell's buttons and wheel bracket), and there's only one battery in the final
+design — the nice!nano's LiPo. So the sensor circuit needs to be fed from that
+LiPo somehow, without disturbing the signal characteristics the whole wheel
+investigation was calibrated against.
+
+**Current thinking, not yet resolved:** feed the donor board's original battery
+contact pads with something regulated down to ~1.5V (matching the AA it replaces)
+rather than tapping in post-boost-converter or feeding raw 3.3V/LiPo voltage
+directly — preserves the board's own regulation chain exactly as tested. An LM317
+set up as an adjustable regulator (`R1=120Ω`, `R2=24Ω` → ~1.5V) is a candidate,
+sourced from the nice!nano's regulated 3.3V rail rather than raw LiPo voltage for
+better dropout headroom — but LM317's typical ~2V dropout spec is marginal at
+that low an output voltage, so this needs a real bench test (built and measured
+under actual load from the mouse board, not just open-circuit) before trusting
+it, not just a datasheet calculation. Not yet built or tested as of this writing.
+
+Separately, tabled for later: whether the existing power switch (already wired
+as a GPIO input for the nice!nano's own sleep/wake, see Power switch above)
+should also gate this sensor circuit's power via a small MOSFET, or leave it
+powered continuously. Not blocking anything else.
+
 ## Out of scope for this design
 
 - Pin assignments (implementation detail, decided during step 0/wiring).
