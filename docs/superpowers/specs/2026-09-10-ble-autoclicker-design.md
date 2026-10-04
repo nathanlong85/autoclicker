@@ -35,12 +35,13 @@ and the hardware-facing firmware. Full hardware/firmware background is in
   switch position or sleep state. This is the only way to get both "true off" and
   "charges while off" on this board without cutting a PCB trace; it does mean the power
   switch is no longer zero-firmware, unlike the original (mistaken) EN-pin design.
-- **Inputs:** left switch, right switch, scroll-wheel quadrature encoder, wheel-click
-  switch (pairing button, v1, added 2026-09-13) — desoldered from the donor mouse and
-  rewired to nRF52840 GPIO. Pin assignments are decided during implementation, not this
-  design. The scroll wheel is an **optical** quadrature encoder (light-interrupter +
-  slotted disc), not mechanical contacts — same digital two-channel quadrature
-  interface either way, but wiring/tracing it out differs from a simple switch.
+- **Inputs:** left switch, right switch, scroll wheel, wheel-click switch (pairing
+  button, v1, added 2026-09-13) — desoldered from the donor mouse and rewired to
+  nRF52840 GPIO. Pin assignments are decided during implementation, not this design.
+  The scroll wheel is **not** a standard two-channel quadrature encoder (corrected
+  2026-10-02 — see the Correction section below): it's optical (light-interrupter +
+  slotted disc), but exposes only one usable data pin. Direction comes from a
+  single-pin pulse-pattern signal instead of a two-phase truth table.
 - **Language/toolchain:** Arduino IDE, Adafruit nRF52 board core ("nice!nano"),
   Adafruit Bluefruit BLE HID library. Not CircuitPython — fast, reliable click timing
   is the project's core requirement, and CircuitPython's BLE HID + timing at the fast
@@ -130,8 +131,16 @@ autoclicker/
   firmware/
     Button.h/.cpp                  — GPIO + Debouncer, thin
     Debouncer.h/.cpp               — pure debounce logic (Claude's)
-    Wheel.h/.cpp                   — GPIO + QuadratureDecoder, thin
-    QuadratureDecoder.h/.cpp       — pure quadrature decode logic (Claude's)
+    Wheel.h/.cpp                   — GPIO interrupt + BurstGrouper +
+                                      WheelPulseDecoder, thin (corrected
+                                      2026-10-02 — single pin, not two)
+    BurstGrouper.h/.cpp            — pure: edge timestamps -> completed burst
+                                      sizes (added 2026-10-02, split out of
+                                      what the Correction below originally
+                                      described as one class)
+    WheelPulseDecoder.h/.cpp       — pure: burst sizes -> direction
+                                      classification (renamed/redesigned
+                                      2026-10-02, was QuadratureDecoder)
     HidButtonState.h/.cpp          — composes "held" + "pulse" into HID report state
     PairingButton.h/.cpp           — GPIO + Debouncer + LongPressDetector, thin
                                       (v1, added 2026-09-13)
@@ -149,7 +158,8 @@ autoclicker/
     doctest.h                      — vendored single-header test framework
     test_clicker.cpp               — Colin's tests for core/
     test_debouncer.cpp             — Claude's tests for firmware/'s pure pieces
-    test_quadrature_decoder.cpp
+    test_burst_grouper.cpp         — (added 2026-10-02)
+    test_wheel_pulse_decoder.cpp   — (renamed 2026-10-02, was test_quadrature_decoder.cpp)
     test_hid_button_state.cpp
     test_long_press_detector.cpp   — (v1, added 2026-09-13)
     test_led_color_picker.cpp
@@ -203,8 +213,29 @@ manual checklist instead.)
 - **`Debouncer`** — pure: `bool update(bool raw_reading, uint32_t now_ms)`. `Button`
   wraps one `digitalRead()` call around it — that one line is the only untested part of
   input handling.
-- **`QuadratureDecoder`** — pure: `int update(bool pin_a, bool pin_b)` → -1/0/+1 detents.
-  `Wheel` wraps two `digitalRead()` calls around it.
+- **`BurstGrouper`** (added 2026-10-02) — pure: `bool pulse(uint32_t now_us, int*
+  completed_burst_size)`, fed one call per rising edge on the single data pin.
+  Groups edges less than 20µs apart into one burst; returns true (with the
+  finished burst's pulse count) exactly when a new edge's gap confirms the
+  previous burst ended. See implementation plan for full rationale and tests.
+- **`WheelPulseDecoder`** (corrected 2026-10-02, was `QuadratureDecoder` — see
+  Correction below) — pure: `Direction update(int burst_size)`, fed each
+  completed burst size from `BurstGrouper`. Tracks a rolling window of recent
+  burst sizes and reports `kHighTripleRate`/`kLowTripleRate`/`kUnknown` (window
+  not yet full) based on the fraction of 3-or-more-pulse bursts. Starting
+  constants (window=100 bursts, threshold=1.00%) come from the investigation's
+  captured data, **not yet calibrated against real nice!nano GPIO-interrupt
+  hardware** — see implementation plan's hands-on calibration tasks. Direction
+  is intentionally reported in signal terms, not "up"/"down" — mapping a
+  trip-rate band to a physical rotation direction is `Wheel`'s job, decided
+  during calibration, same as `Wheel`'s existing up→negative-detent mapping.
+  `Wheel` wraps one GPIO interrupt (not `digitalRead()` polling — the real
+  pulses are sub-microsecond, see the investigation doc) around both of the
+  above. **Still open:** how many bursts correspond to one physical wheel
+  detent is not yet known — investigation confirmed direction, not
+  detent-to-burst scaling. That mapping needs its own calibration pass on real
+  hardware before `Wheel` can call `Clicker::scroll()` with correctly-paced
+  detent counts.
 - **`HidButtonState`** — pure: composes a real held-left-button state with autoclick
   "pulses" into the correct sequence of HID press/release reports, so an autoclick
   pulse firing while the player is genuinely holding left doesn't emit a spurious
@@ -245,7 +276,7 @@ hand-rolled HID report format is needed. Connection state for `SpeedLed` comes f
 | Layer | Tests | Author |
 |---|---|---|
 | `core::Clicker` | Unit, `test/test_clicker.cpp`, host-run via `make test` | Colin |
-| `firmware::Debouncer`, `QuadratureDecoder`, `HidButtonState`, `LedColorPicker`, `LongPressDetector` | Unit, host-run via `make test` | Claude |
+| `firmware::Debouncer`, `BurstGrouper`, `WheelPulseDecoder`, `HidButtonState`, `LedColorPicker`, `LongPressDetector` | Unit, host-run via `make test` | Claude |
 | `Button`, `Wheel`, `PairingButton`, `Mouse`, `SpeedLed`, power-switch sleep check (one-line GPIO/BLE/PWM/sleep glue) | Not unit tested — covered by step 0 and final-assembly manual checks | — |
 | End-to-end (real board, real inputs, real Bluetooth) | Manual checklist: pairs on Mac/iPhone/Android; left/right/wheel behavior matches spec; holding the wheel-click button 5s forgets and re-pairs; LED shows the right color/state for both connection states across the speed range; power switch off → board dark/unresponsive, on → resumes, USB-C charges in either position; fits in shell | Nate + Colin |
 
@@ -303,6 +334,70 @@ wakes the chip), rather than any hardware-only power gating. The battery stays
 connected throughout, so this still achieves the original goal — off means off,
 charging still works — just via firmware instead of a dedicated regulator-disable pin
 this board doesn't have.
+
+## Correction — scroll wheel is not a quadrature encoder (2026-10-02)
+
+A multi-day hardware investigation (`docs/scroll-wheel-investigation.md`) found the
+donor mouse's wheel sensor (`LQ1`) exposes only **one** usable data pin, not the two
+the original Hardware/Architecture sections above assumed — the second pin (`middle`)
+tested completely inert across every method tried, including a hardware-interrupt test
+that can't physically miss a real transition. Yet the original mouse unambiguously
+scrolls both directions through its own receiver, which was the investigation's
+central, unresolved puzzle for most of its length.
+
+**Resolved:** direction is recoverable from the single pin. At high sample rate, the
+signal isn't a clean slot-open square wave — it's narrow pulses arriving in pairs
+("bursts") roughly every 480µs. Occasionally a burst has a 3rd pulse instead of 2, and
+the *rate* of that happening is direction-dependent: ~0% rolling the wheel one way,
+~2–5% the other, cleanly separated with no overlap across every capture taken,
+including two live captures where the wheel was physically reversed mid-capture at a
+stopwatch-marked moment and the measured rate flipped within tens of milliseconds of
+the real switch.
+
+**Architecture impact** (reflected inline above): `QuadratureDecoder` is renamed
+`WheelPulseDecoder` and takes one pulse-burst signal instead of two GPIO levels;
+`Wheel` wraps a single GPIO interrupt instead of two polled `digitalRead()` pins,
+since the real pulses are too narrow (sub-microsecond) for polling to reliably catch.
+No change to `core/`'s `Clicker::scroll(int detents)` contract or Colin's plan —
+`Wheel` is still solely responsible for producing correctly-signed detent counts.
+
+**Not yet resolved:** how many pulse-bursts correspond to one physical wheel detent.
+The investigation measured direction, not this scaling — it needs its own calibration
+pass against real hardware during `firmware/` implementation, separate from the
+algorithm/threshold tuning the burst-rate direction detector itself still needs.
+
+## Open question — powering the mouse sensor circuit (raised 2026-10-03)
+
+Every test in `docs/scroll-wheel-investigation.md` kept the donor mouse's **own**
+battery and board intact specifically because `LQ1`/`LD2` are powered through
+whatever regulation exists on that board, not raw battery voltage — `middle`
+measures a steady ~2.2–2.8V, well above what the mouse's **single AA cell**
+(nominal ~1.5V) can supply directly. A tiny inductor near the battery contacts
+(confirmed 2026-10-03) means there's almost certainly a small boost converter on
+the donor board doing that step-up.
+
+In the final assembly, the donor board has to stay physically intact and mounted
+in place (its components can't be desoldered without losing alignment with the
+shell's buttons and wheel bracket), and there's only one battery in the final
+design — the nice!nano's LiPo. So the sensor circuit needs to be fed from that
+LiPo somehow, without disturbing the signal characteristics the whole wheel
+investigation was calibrated against.
+
+**Current thinking, not yet resolved:** feed the donor board's original battery
+contact pads with something regulated down to ~1.5V (matching the AA it replaces)
+rather than tapping in post-boost-converter or feeding raw 3.3V/LiPo voltage
+directly — preserves the board's own regulation chain exactly as tested. An LM317
+set up as an adjustable regulator (`R1=120Ω`, `R2=24Ω` → ~1.5V) is a candidate,
+sourced from the nice!nano's regulated 3.3V rail rather than raw LiPo voltage for
+better dropout headroom — but LM317's typical ~2V dropout spec is marginal at
+that low an output voltage, so this needs a real bench test (built and measured
+under actual load from the mouse board, not just open-circuit) before trusting
+it, not just a datasheet calculation. Not yet built or tested as of this writing.
+
+Separately, tabled for later: whether the existing power switch (already wired
+as a GPIO input for the nice!nano's own sleep/wake, see Power switch above)
+should also gate this sensor circuit's power via a small MOSFET, or leave it
+powered continuously. Not blocking anything else.
 
 ## Out of scope for this design
 
