@@ -2,7 +2,8 @@ CXX := c++
 CXXFLAGS := -std=c++17 -Wall -Wextra -Ifirmware -Itest
 
 TEST_SRCS := test/test_main.cpp test/test_burst_grouper.cpp \
-             firmware/BurstGrouper.cpp
+             test/test_wheel_pulse_decoder.cpp \
+             firmware/BurstGrouper.cpp firmware/WheelPulseDecoder.cpp
 TEST_BIN := build/test_runner
 
 .PHONY: test clean
