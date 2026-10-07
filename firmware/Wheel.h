@@ -11,15 +11,15 @@
 // hands-on calibration tasks and the final manual checklist, not
 // `make test`.
 //
-// PIN ASSIGNMENT NOT YET CONFIRMED (see implementation plan Task 6):
-// kPulsePin below is a placeholder. Confirm the nice!nano's actual
-// silkscreen label against docs/hardware-bringup-log.md's D-number/P-port
-// gotcha (no real nice!nano board definition exists -- Arduino D-numbers
-// map through the Feather 52840 variant.cpp, not the silkscreen) before
-// trusting this constant on real hardware.
+// kPulsePin is Arduino D18 = P0.02 = the nice!nano pad silkscreened "002"
+// (no real nice!nano board definition exists -- Arduino D-numbers map
+// through the Feather 52840 variant.cpp, not the silkscreen; see
+// docs/hardware-bringup-log.md's D-number/P-port gotcha). Same pin the
+// scroll-wheel investigation's interrupt test (test 6) already used for
+// LQ1 "bottom". Not D2: that is P0.10, an NFC pin.
 class Wheel {
  public:
-  static constexpr uint8_t kPulsePin = 2;  // PLACEHOLDER -- confirm at wiring time (Task 6)
+  static constexpr uint8_t kPulsePin = 18;  // P0.02, silkscreen "002"
 
   Wheel();
 
