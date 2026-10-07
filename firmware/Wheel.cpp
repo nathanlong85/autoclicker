@@ -8,6 +8,10 @@ volatile int Wheel::edge_read_index_ = 0;
 Wheel::Wheel() : grouper_(), decoder_(), total_bursts_(0), total_triples_(0) {}
 
 void Wheel::begin() {
+  // Without this, micros() falls back to the ~977us RTOS tick, which is far
+  // too coarse for BurstGrouper's 20us burst gap. With it, micros() reads the
+  // CPU cycle counter (1us resolution at 64 MHz).
+  dwt_enable();
   pinMode(kPulsePin, INPUT);
   attachInterrupt(digitalPinToInterrupt(kPulsePin), handleInterrupt, RISING);
 }
