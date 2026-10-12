@@ -1,8 +1,12 @@
 # Scroll Wheel Sensor Investigation
 
-**Status as of 2026-10-02: resolved.** `bottom` alone does carry direction —
-see [Resolution](#resolution-2026-10-02) below. Sections above this point are
-kept as a record of how we got there.
+**Status as of 2026-10-08: wheel abandoned for speed control.** `bottom`
+alone does carry direction at the logic-analyzer level — see
+[Resolution](#resolution-2026-10-02) — but it could not be read reliably on the
+nice!nano, and single-notch input is too imprecise to be useful. See
+[nice!nano interrupt testing](#nicenano-interrupt-testing-2026-10-0308) for
+why. Speed control moves to the wheel-tilt buttons. Sections above that point
+are kept as a record of how we got there.
 
 ## Context
 
@@ -385,6 +389,66 @@ analysis script (it was including 3 CSV header lines as if they were data
 rows), not a real signal. It didn't change any conclusion, since every real
 comparison in this doc is between much larger numbers, but it's why "dead"
 channels read "4" instead of "0" earlier on.
+
+## nice!nano interrupt testing (2026-10-03–08)
+
+Goal: confirm the Resolution's burst-rate decode on real nice!nano hardware
+(`firmware/Wheel`, interrupt on `bottom` = pin silkscreened "002" = P0.02 =
+Arduino D18). Tooling: throwaway sketches under `scratch/` (gitignored).
+
+### Confirmed
+
+- **Timestamps need the cycle counter.** On the Adafruit nRF52 core 1.7.0,
+  `micros()` falls back to the 1024 Hz RTOS tick (~977us) unless
+  `dwt_enable()` has been called. `Wheel::begin()` now calls it.
+- **Burst rate matches the analyzer.** About 2063 bursts/sec while the wheel
+  is moving, no dropped edges, which is the logic analyzer's figure.
+- **Pairs are resolved, triples are not.** The ISR sees the two pulses of a
+  pair about 4-8us apart (interrupt latency, not the real sub-us spacing).
+  Burst size 3 was never observed in any capture.
+- **A different direction signature does appear:** bursts of *one* edge
+  (size 1). Steady spins: ~2-3% of bursts in one direction, ~0.1% in the
+  other. Reproduced in both spin orders (Down-then-Up and Up-then-Down), so
+  it follows physical direction, not capture order. The high-rate direction
+  was the one the tester calls "Up" — the opposite label from the Resolution
+  section's "down". Likely a naming difference; not chased.
+- **In the high-rate direction the odd events come in pairs** ~6ms apart,
+  repeating every ~20-40ms, which looks like one pair per slot passing. In the
+  other direction they were sparse and unpaired (background noise).
+- **The mouse board sleeps.** Its own firmware powers the sensor down after a
+  short idle; wheel motion does not wake it, a button click does.
+
+### Inferred, not proven
+
+- **Bursts are the donor board's own sampling strobe, not a measure of wheel
+  travel.** The rate steps ~16/s (idle) -> ~257/s (settling, for several
+  seconds after motion) -> ~2063/s (moving), independent of spin speed. So
+  "bursts per detent" is not a meaningful quantity, and a movement can't be
+  segmented by gaps in bursts.
+- **Direction is present only as odd events in one direction**; the other
+  direction is the *absence* of them, which cannot be used to count notches.
+
+### Single notches
+
+Across 5-6 single nudges each way, the high-rate direction gave roughly 2-4
+odd events per nudge and the other roughly 1 (about 16 vs 6 events total).
+A single notch is too little data to classify reliably, and the wheel's
+notches are very shallow and close together, so a user can't turn exactly
+one at a time anyway.
+
+### Decision
+
+Not worth more effort for v1. Speed control uses the wheel-tilt buttons
+(plain switches, no sensor power needed, which also removes the open
+sensor-power / LM317 question). The wheel code (`BurstGrouper`,
+`WheelPulseDecoder`, `Wheel`) stays in git as reference.
+
+If the wheel is revisited (v2): the next step would be logic-analyzer
+captures of *single notches* in each direction (the earlier captures were all
+steady spins), and then a hardware pulse capture on the nRF52840
+(GPIOTE -> PPI -> TIMER) instead of an ISR, which would see the sub-us
+pulse structure the ISR cannot. Untested with the BLE stack running too —
+SoftDevice radio events can delay the ISR further.
 
 ## Related scratch files
 
